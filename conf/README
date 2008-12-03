@@ -1,0 +1,60 @@
+# Syntax
+
+# A domain is a self consistent domain of translation (English, German, Paragraph Markings ...)
+Domain=NAME1
+
+# Within a domain are a number of fixed translations
+# format is raw_range=trans_range
+s3:c200.c511=Confidential
+# repeat as required...
+
+# Within a domain are variable translations that are a Base + ModifierGroup + ModifierGroup
+Base=Sensitivity Levels
+# raw_range=name
+s1=Unclassified
+# Aliases have the same name but a different translation.
+# The first one is used to compute translations
+s1=U
+# inverse bits should appear in the base of any level that uses inverse bits
+s2:c200.c511=Restricted
+# repeat as required...
+
+# Modifier Groups should be in the order of appearance in the translated range.
+ModifierGroup=GROUP1
+# Allowed white space can be defined
+Whitespace=- ,/
+# Join defines the character between multiple members of this group
+Join=/
+# A Prefix can be defined per group
+Prefix=Releasable to
+# Inverse categories (releasabilities) should always be set as Default categories in every ModifierGroup
+Default=c200.c511
+# format is raw_categories=name
+# ~ turns off inverse bits
+~c200.c511=EVERYBODY
+
+# Aruba - bit 201
+~c200,~c201=ABW
+~c200,~c201=AA
+# Afghanistan - bit 202
+~c200,~c202=AFG
+~c200,~c202=AF
+# repeat as required...
+
+# Another Modifier Group
+ModifierGroup=GROUP2
+# With different white space
+Whitespace= 
+# And different Join
+Join=,
+# A Suffix can be defined per group
+Suffix=Eyes only
+# Default categories need to be consistent
+Default=c200.c511
+
+# New domain 
+Domain=NAME2
+
+# any text can be put in a separate file
+Include=PATH
+Include=PATH

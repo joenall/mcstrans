@@ -1,0 +1,11 @@
+Secret A==s4:c0,c200.c511
+Secret B==s4:c1,c200.c511
+Secret AB==s4:c0,c1,c200.c511
+Unclassified-Secret AB==s1-s4:c0,c1,c200.c511
+Secret AB-Secret A==s4:c0,c1,c200.c511-s4:c0,c200.c511
+Secret AB-Secret B==s4:c0,c1,c200.c511-s4:c1,c200.c511
+Secret AB-Secret==s4:c0,c1,c200.c511-s4:c200.c511
+
+# error
+Secret C==Secret C
+Secret C-Secret D==Secret C-Secret D
