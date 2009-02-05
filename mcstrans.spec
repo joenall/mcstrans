@@ -1,7 +1,7 @@
 Summary: SELinux Translation Daemon
 Name: mcstrans
 Version: 0.3.0
-Release: 1%{?dist}
+Release: 2%{?dist}
 License: GPL
 Group: System Environment/Daemons
 Source: http://fedora.redhat.com/projects/%{name}-%{version}.tgz
@@ -39,9 +39,12 @@ make CFLAGS="-g %{optflags}"
 rm -rf %{buildroot}
 mkdir -p %{buildroot}/%{_lib} 
 mkdir -p %{buildroot}/%{_libdir} 
+mkdir -p %{buildroot}%{_usr}/share/mcstrans
+
 make DESTDIR="%{buildroot}" LIBDIR="%{buildroot}%{_libdir}" SHLIBDIR="%{buildroot}/%{_lib}" install
 rm -f %{buildroot}%{_sbindir}/*
 rm -f %{buildroot}%{_libdir}/*.a
+cp -r share/* %{buildroot}%{_usr}/share/mcstrans/
 
 %clean
 rm -rf %{buildroot}
@@ -69,7 +72,21 @@ fi
 /sbin/mcstransd
 %{_sysconfdir}/rc.d/init.d/mcstrans
 
+%dir %{_usr}/share/mcstrans
+
+%dir %{_usr}/share/mcstrans/examples
+%defattr(0644,root,root,0755)
+%{_usr}/share/mcstrans/examples/*
+
+%dir %{_usr}/share/mcstrans/util
+%defattr(0755,root,root,0755)
+%{_usr}/share/mcstrans/util/*
+
 %changelog
+* Thu Feb 5 2009 Joe Nall <joe@nall.com> 0.3.0-1
+- Rewrite translations to allow individual word/category mapping
+- Eamon Walsh's color mapping changes
+
 * Wed May 7 2008 Dan Walsh <dwalsh@redhat.com> 0.2.11-1
 - More fixes from Jim Meyering
 

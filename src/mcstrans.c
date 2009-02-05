@@ -1,5 +1,5 @@
 
-/* Copyright (c) 2008 Nall Design Works
+/* Copyright (c) 2008-2009 Nall Design Works
    Copyright 2006 Trusted Computer Solutions, Inc. */
 
 /*
@@ -13,6 +13,7 @@
 */
 
 #include <math.h>
+#include <glob.h>
 #include <values.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -640,8 +641,20 @@ process_trans(char *buffer) {
 	}
 
 	if (!strcmp(raw, "Include")) {
-		if (read_translations(tok) < 0)
+		int n;
+		glob_t g;
+		g.gl_offs = 0;
+		if (glob(tok, GLOB_ERR, NULL, &g) < 0) {
 			return -1;
+			globfree(&g);
+		}
+		for (n=0; n < g.gl_pathc; n++) {
+			if (read_translations(g.gl_pathv[n]) < 0) {
+				globfree(&g);
+				return -1;
+			}
+		}
+		globfree(&g);
 	} else if (!strcmp(raw, "Base")) {
 		base_classification = 1;
 	} else if (!strcmp(raw, "ModifierGroup")) {
