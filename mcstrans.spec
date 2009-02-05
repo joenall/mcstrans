@@ -37,9 +37,10 @@ make CFLAGS="-g %{optflags}"
 
 %install
 rm -rf %{buildroot}
-mkdir -p %{buildroot}/%{_lib} 
-mkdir -p %{buildroot}/%{_libdir} 
+mkdir -p %{buildroot}%{_lib} 
+mkdir -p %{buildroot}%{_libdir} 
 mkdir -p %{buildroot}%{_usr}/share/mcstrans
+mkdir -p %{buildroot}%{_sysconfdir}/selinux/mls/setrans.d
 
 make DESTDIR="%{buildroot}" LIBDIR="%{buildroot}%{_libdir}" SHLIBDIR="%{buildroot}/%{_lib}" install
 rm -f %{buildroot}%{_sbindir}/*
@@ -71,14 +72,15 @@ fi
 %{_mandir}/man8/mcs.8.gz
 /sbin/mcstransd
 %{_sysconfdir}/rc.d/init.d/mcstrans
+%dir %{_sysconfdir}/selinux/mls/setrans.d
 
 %dir %{_usr}/share/mcstrans
 
-%dir %{_usr}/share/mcstrans/examples
 %defattr(0644,root,root,0755)
+%dir %{_usr}/share/mcstrans/util
+%dir %{_usr}/share/mcstrans/examples
 %{_usr}/share/mcstrans/examples/*
 
-%dir %{_usr}/share/mcstrans/util
 %defattr(0755,root,root,0755)
 %{_usr}/share/mcstrans/util/*
 

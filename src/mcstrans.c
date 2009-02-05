@@ -641,7 +641,7 @@ process_trans(char *buffer) {
 	}
 
 	if (!strcmp(raw, "Include")) {
-		int n;
+		unsigned int n;
 		glob_t g;
 		g.gl_offs = 0;
 		if (glob(tok, GLOB_ERR, NULL, &g) < 0) {
