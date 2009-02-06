@@ -1,7 +1,7 @@
 Summary: SELinux Translation Daemon
 Name: mcstrans
 Version: 0.3.0
-Release: 5%{?dist}
+Release: 6%{?dist}
 License: GPL
 Group: System Environment/Daemons
 Source: http://fedora.redhat.com/projects/%{name}-%{version}.tgz
@@ -85,7 +85,7 @@ fi
 %{_usr}/share/mcstrans/util/*
 
 %changelog
-* Thu Feb 5 2009 Joe Nall <joe@nall.com> 0.3.0-1
+* Thu Feb 5 2009 Joe Nall <joe@nall.com> 0.3.0-6
 - Rewrite translations to allow individual word/category mapping
 - Eamon Walsh's color mapping changes
 
