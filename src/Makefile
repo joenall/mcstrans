@@ -18,7 +18,7 @@ PREFIX  ?= $(DESTDIR)/usr
 SBINDIR ?= $(DESTDIR)/sbin
 INITDIR ?= $(DESTDIR)/etc/rc.d/init.d
 
-PROG_SRC=mcstrans.c  mcstransd.c  mls_level.c
+PROG_SRC=mcstrans.c  mcscolor.c  mcstransd.c  mls_level.c
 PROG_OBJS= $(patsubst %.c,%.o,$(PROG_SRC))
 PROG=mcstransd
 INITSCRIPT=mcstrans

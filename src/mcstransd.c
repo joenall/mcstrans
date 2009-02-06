@@ -33,6 +33,7 @@
 #define SETRANS_INIT			1
 #define RAW_TO_TRANS_CONTEXT		2
 #define TRANS_TO_RAW_CONTEXT		3
+#define RAW_CONTEXT_TO_COLOR		4
 #define MAX_DATA_BUF			4096
 #define MAX_DESCRIPTORS			8192
 
@@ -48,6 +49,10 @@ extern void finish_context_translations(void);
 extern int trans_context(const security_context_t, security_context_t *);
 extern int untrans_context(const security_context_t, security_context_t *);
 
+extern int init_colors(void);
+extern void finish_context_colors(void);
+extern int raw_color(const security_context_t, char **);
+
 #define SETRANSD_PATHNAME "/sbin/mcstransd"
 
 /* name of program (for error messages) */
@@ -60,6 +65,7 @@ static void cleanup_exit(int ret) __attribute__ ((noreturn));
 static void
 cleanup_exit(int ret) 
 {
+	finish_context_colors();
 	finish_context_translations();
 	if (sockfd >=0)
 		(void)unlink(SETRANS_UNIX_SOCKET);
@@ -74,42 +80,6 @@ static  __attribute__((noreturn)) void clean_exit(void)
 {
 	log_debug("%s\n", "clean_exit");
 	cleanup_exit(0);
-}
-
-/*
- * Convert raw label portion of a security context to translated label
- * Returns:  0 on success, 1 on failure
- */
-static int
-raw_to_trans_context(char *in, char **out, char *UNUSED(pcon))
-{
-	log_debug("raw_to_trans_context=%s\n", in);
-	*out = NULL; 
-
-	/* TODO: Check if MLS clearance (in "pcon") dominates the MLS label
-	 * (in "in").
-	 */
-
-	return trans_context(in, out);
-}
-
-
-/*
- * Convert translated label of a security context to raw label
- * Returns:  0 on success, 1 on failure
- */
-static int
-trans_to_raw_context(char *in, char **out, char *UNUSED(pcon))
-{
-	log_debug("trans_to_raw_context=%s\n", in);
-
-	*out = NULL;
-	
-	/* TODO: Check if MLS clearance (in "pcon") dominates the MLS label
-	 * (in "in").
-	 */
-
-	return untrans_context(in, out);
 }
 
 static int
@@ -194,39 +164,42 @@ process_request(int fd, uint32_t function, char *data1, char *UNUSED(data2))
 	char *peercon = NULL;
 	int ret;
 
+	ret = get_peer_con(fd, &peercon);
+	if (ret)
+		return ret;
+
+	/* TODO: Check if MLS clearance (in peercon) dominates the MLS label
+	 * (in the request input).
+	 */
+  
 	switch (function) {
 	case SETRANS_INIT:
 		result = 0;
 		ret = send_response(fd, function, NULL, result);
 		break;
 	case RAW_TO_TRANS_CONTEXT:
-		ret = get_peer_con(fd, &peercon);
-		if (ret)
-			return ret;
-		result = raw_to_trans_context(data1, &out, peercon);
-		if (result) {
-			pid_t pid = 0;
-			get_peer_pid(fd, &pid);
-			syslog(LOG_ERR, "Invalid raw_to_trans_context request from=%u", pid);
-		}
+		result = trans_context(data1, &out);
 		ret = send_response(fd, function, out, result);
 		break;
 	case TRANS_TO_RAW_CONTEXT:
-		ret = get_peer_con(fd, &peercon);
-		if (ret)
-			return ret;
-		result = trans_to_raw_context(data1, &out, peercon);
-		if (result) {
-			pid_t pid = 0;
-			get_peer_pid(fd, &pid);
-			syslog(LOG_ERR, "Invalid trans_to_raw_context request from=%u", pid);
-		}
+		result = untrans_context(data1, &out);
+		ret = send_response(fd, function, out, result);
+		break;
+	case RAW_CONTEXT_TO_COLOR:
+		result = raw_color(data1, &out);
 		ret = send_response(fd, function, out, result);
 		break;
 	default:
-		syslog(LOG_ERR, "Invalid request func=%d", function);
+		result = -1;
 		ret = -1;
 		break;
+	}
+
+	if (result) {
+		pid_t pid = 0;
+		get_peer_pid(fd, &pid);
+		syslog(LOG_ERR, "Invalid request func=%d from=%u",
+		       function, pid);
 	}
 
 	free(out);
@@ -446,10 +419,16 @@ process_connections(void)
 	while (1) {
 		if (restart_daemon) {
 			syslog(LOG_NOTICE, "Reload Translations");
+			finish_context_colors();
 			finish_context_translations();
 			if (init_translations()) {
 				syslog(LOG_ERR, "Failed to initialize label translations");
 				cleanup_exit(1);
+			}
+			if (init_colors()) {
+				syslog(LOG_ERR, "Failed to initialize color translations");
+				syslog(LOG_ERR, "No color information will be available");
+				/* cleanup_exit(1); */
 			}
 			restart_daemon = 0;
 		}
@@ -496,6 +475,11 @@ initialize(void)
 	if (init_translations()) {
 		syslog(LOG_ERR, "Failed to initialize label translations");
 		cleanup_exit(1);
+	}
+	if (init_colors()) {
+		syslog(LOG_ERR, "Failed to initialize color translations");
+		syslog(LOG_ERR, "No color information will be available");
+		/* cleanup_exit(1); */
 	}
 
 	/* the socket will be unlinked when the daemon terminates */

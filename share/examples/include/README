@@ -1,4 +1,4 @@
-Original RHEL 5 setrans.conf
+Original RHEL 5 setrans.conf pushed into setrans.d as include file
 
 To use:
 cp setrans.conf /etc/selinux/mls/setrans.conf

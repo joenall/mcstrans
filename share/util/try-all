@@ -1,0 +1,40 @@
+#!/bin/bash
+
+fail() {
+  echo $1
+  exit 1
+}
+
+[ `id -u` = 0 ] || fail "must run as root"
+
+for d in /usr/share/mcstrans/examples/*; do
+	echo $d
+
+	rm -rf /etc/selinux/mls/setrans.conf.bak /etc/selinux/mls/setrans.d.bak
+	[ $? -eq 0 ] || fail "preclean failed"
+
+	mv /etc/selinux/mls/setrans.conf /etc/selinux/mls/setrans.conf.bak
+	[ $? -eq 0 ] || fail "backup failed"
+
+	mv /etc/selinux/mls/setrans.d /etc/selinux/mls/setrans.d.bak
+	[ $? -eq 0 ] || fail "backup failed"
+
+	cp $d/setrans.conf /etc/selinux/mls/setrans.conf
+	if [ -d $d/setrans.d ]; then
+		cp -r $d/setrans.d /etc/selinux/mls
+	fi
+
+	runcon `cat /etc/selinux/mls/contexts/initrc_context` /etc/init.d/mcstrans restart
+	/usr/share/mcstrans/util/mlstrans-test $d/*.test
+
+	rm -rf /etc/selinux/mls/setrans.conf /etc/selinux/mls/setrans.d
+	mv /etc/selinux/mls/setrans.conf.bak /etc/selinux/mls/setrans.conf
+	mv /etc/selinux/mls/setrans.d.bak    /etc/selinux/mls/setrans.d
+
+	restorecon -rv /etc/selinux/mls/setrans.conf /etc/selinux/mls/setrans.d >/dev/null
+	runcon `cat /etc/selinux/mls/contexts/initrc_context` /etc/init.d/mcstrans restart
+done
+exit 0
+
+
+
