@@ -27,6 +27,7 @@ for arg in sys.argv[1:]:
             print "Unable to get colors for '%s'" % (context)
             errors += 1
             continue
+        colors = colors.rstrip()
         if colors != expected:
             print "For '%s' got\n\t'%s' expected\n\t'%s'" % (context,colors,expected)
             errors += 1

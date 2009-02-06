@@ -1,7 +1,7 @@
 Summary: SELinux Translation Daemon
 Name: mcstrans
 Version: 0.3.0
-Release: 2%{?dist}
+Release: 3%{?dist}
 License: GPL
 Group: System Environment/Daemons
 Source: http://fedora.redhat.com/projects/%{name}-%{version}.tgz
