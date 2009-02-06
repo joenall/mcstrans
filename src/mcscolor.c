@@ -259,6 +259,7 @@ static char *get_color_path(void)
 		strncat(path, "/etc/selinux/", 16);
 		strncat(path, poltype, 128);
 		strncat(path, "/secolor.conf", 16);
+		free(poltype);
 	}
 	syslog(LOG_ERR, "%s", path);
 	return path;
