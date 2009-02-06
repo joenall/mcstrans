@@ -7,10 +7,11 @@ Simple handling of
 via include files
 
 To use:
-cp setrans.conf /etc/selinux/mls/setrans.conf
+cp setrans.conf /etc/selinux/mls/
+cp secolor.conf /etc/selinux/mls/
 rm -f /etc/selinux/mls/setrans.d/*
 cp setrans.d/*  /etc/selinux/mls/setrans.d
 run_init /etc/init.d/mcstrans restart
 
 To test:
-/usr/share/mcstrans/util/mlstrans-test include2.test
+/usr/share/mcstrans/util/mlstrans-test urcsts.test
