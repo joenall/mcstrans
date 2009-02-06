@@ -46,7 +46,7 @@ for arg in sys.argv[1:]:
 
 s = "s"
 if errors == 1: s = ""
-print "done with %d error%s" % (errors, s)
+print "mlstrans-test done with %d error%s" % (errors, s)
 
 sys.exit(errors)
 

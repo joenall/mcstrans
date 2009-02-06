@@ -7,6 +7,7 @@ Simple handling of
 
 To use:
 cp setrans.conf /etc/selinux/mls/setrans.conf
+cp secolor.conf /etc/selinux/mls/
 run_init /etc/init.d/mcstrans restart
 
 To test:
