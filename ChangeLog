@@ -1,5 +1,6 @@
-0.3.0 2008-06-10
+0.3.0 2009-02-06
 	* Add inverse bit support
+	* Add color support from Eamon Walsh
 0.2.1 2007-02-6
 	* Rewrite for Proper MLS Translations
 0.1.8 2005-08-5
