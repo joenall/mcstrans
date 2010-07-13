@@ -1228,6 +1228,13 @@ trans_context(const security_context_t incon, security_context_t *rcon) {
 				ltrans = compute_trans_from_raw(lrange, domain);
 				if (ltrans)
 					add_cache(domain, lrange, ltrans);
+				else {
+					ltrans = strdup(lrange);
+					if (! ltrans) {
+						log_error("strdup failed %s", strerror(errno));
+						exit(1);
+					}
+				}
 			}
 
 			utrans = find_in_hashtable(urange, domain, domain->raw_to_trans);
@@ -1235,24 +1242,30 @@ trans_context(const security_context_t incon, security_context_t *rcon) {
 				utrans = compute_trans_from_raw(urange, domain);
 				if (utrans)
 					add_cache(domain, urange, utrans);
+				else {
+					utrans = strdup(urange);
+					if (! utrans) {
+						log_error("strdup failed %s", strerror(errno));
+ 						exit(1);
+ 					}
+ 				}
 			}
 
-			if (ltrans && utrans) {
-				if (strcmp(ltrans, utrans) == 0) {
-					if (asprintf(&trans, "%s", ltrans) < 0) {
-						log_error("asprintf failed %s", strerror(errno));
-						exit(1);
-					}
-				} else {
-					if (asprintf(&trans, "%s-%s", ltrans, utrans) < 0) {
-						log_error("asprintf failed %s", strerror(errno));
-						exit(1);
-					}
+			if (strcmp(ltrans, utrans) == 0) {
+				if (asprintf(&trans, "%s", ltrans) < 0) {
+					log_error("asprintf failed %s", strerror(errno));
+					exit(1);
 				}
-				free(ltrans);
-				free(utrans);
-				break;
+			} else {
+				if (asprintf(&trans, "%s-%s", ltrans, utrans) < 0) {
+					log_error("asprintf failed %s", strerror(errno));
+					exit(1);
+				}
 			}
+			free(ltrans);
+			free(utrans);
+			*dashp = '-';
+			break;
 		}
 		if (dashp)
 			*dashp = '-';
@@ -1333,6 +1346,12 @@ untrans_context(const security_context_t incon, security_context_t *rcon) {
 					if (canonical)
 						free(canonical);
 					add_cache(domain, lraw, lrange);
+				} else {
+					lraw = strdup(lrange);
+					if (! lraw) {
+						log_error("strdup failed %s", strerror(errno));
+						exit(1);
+					}
 				}
 			}
 
@@ -1349,32 +1368,34 @@ untrans_context(const security_context_t incon, security_context_t *rcon) {
 					if (canonical)
 						free(canonical);
 					add_cache(domain, uraw, urange);
-				}
-			}
-
-
-			if (lraw && uraw) {
-				if (strcmp(lraw, uraw) == 0) {
-					if (asprintf(&raw, "%s", lraw) < 0) {
-						log_error("asprintf failed %s", strerror(errno));
-						exit(1);
-					}
 				} else {
-					if (asprintf(&raw, "%s-%s", lraw, uraw) < 0) {
-						log_error("asprintf failed %s", strerror(errno));
+					uraw = strdup(urange);
+					if (! uraw) {
+						log_error("strdup failed %s", strerror(errno));
 						exit(1);
 					}
 				}
-				free(lraw);
-				free(uraw);
-				break;
 			}
-			if (lraw)
-				free(lraw);
-			if (uraw)
-				free(uraw);
+
+
+			if (strcmp(lraw, uraw) == 0) {
+				if (asprintf(&raw, "%s", lraw) < 0) {
+					log_error("asprintf failed %s", strerror(errno));
+					exit(1);
+				}
+			} else {
+				if (asprintf(&raw, "%s-%s", lraw, uraw) < 0) {
+					log_error("asprintf failed %s", strerror(errno));
+					exit(1);
+				}
+			}
+			free(lraw);
+			free(uraw);
 			*dashp = '-';
+			break;
 		}
+		if (dashp)
+			*dashp = '-';
 	}
 
 	if (raw) {
