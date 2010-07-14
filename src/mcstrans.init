@@ -20,6 +20,7 @@
 
 PATH=/sbin:/bin:/usr/bin:/usr/sbin
 prog="mcstransd"
+lockfile=/var/lock/subsys/$prog
 
 # Source function library.
 . /etc/init.d/functions
@@ -54,7 +55,7 @@ start(){
 	RETVAL=$?
 	echo
 	if test $RETVAL = 0 ; then
-        	touch /var/lock/subsys/mcstrans
+        	touch $lockfile
 	fi
 	return $RETVAL
 }
@@ -64,15 +65,7 @@ stop(){
 	killproc $prog
 	RETVAL=$?
 	echo
-	rm -f /var/lock/subsys/mcstrans
-	return $RETVAL
-}
-
-reload(){
-	echo -n $"Reloading configuration: "	
-	killproc $prog -HUP
-	RETVAL=$?
-	echo
+	rm -f $lockfile
 	return $RETVAL
 }
 
@@ -82,7 +75,7 @@ restart(){
 }
 
 condrestart(){
-	[ -e /var/lock/subsys/mcstrans ] && restart
+	[ -e $lockfile ] && restart
 	return 0
 }
 
@@ -95,17 +88,14 @@ case "$1" in
     stop)
 	stop
 	;;
-    restart)
+    restart|force-reload)
 	restart
-	;;
-    reload)
-	reload
 	;;
     condrestart)
 	condrestart
 	;;
     *)
-	echo $"Usage: $0 {start|stop|status|restart|condrestart|reload|rotate}"
+	echo $"Usage: $0 {start|stop|status|restart|force-reload|condrestart}"
 	RETVAL=3
 esac
 

@@ -1,8 +1,0 @@
-module setranspatch 0.3.0;
-
-gen_require(`
-       type setrans_t;
-       class context contains;
-')
-allow setrans_t self:context contains;
-
