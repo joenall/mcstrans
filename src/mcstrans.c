@@ -35,7 +35,7 @@
 #include "mls_level.h"
 #include "mcstrans.h"
 
-#define N_BUCKETS 101
+#define N_BUCKETS 1453
 #define OVECCOUNT (512*3)
 
 #define max(a,b) ((a) >= (b) ? (a) : (b))
@@ -105,10 +105,10 @@ ebitmap_andnot(ebitmap_t *dst, ebitmap_t *e1, ebitmap_t *e2) {
 	return 0;
 }
 
-int
+unsigned int
 ebitmap_cardinality(ebitmap_t *e1) {
 	unsigned int i, count = 0;
-	for (i=0; i <= ebitmap_length(e1); i++)
+	for (i=ebitmap_startbit(e1); i < ebitmap_length(e1); i++)
 		if (ebitmap_get_bit(e1, i))
 			count++;
 	return count;
@@ -237,6 +237,27 @@ typedef struct domain {
 } domain_t;
 
 static domain_t *domains;
+
+typedef struct sens_constraint {
+	char op;
+	char *text;
+	unsigned int sens;
+	ebitmap_t cat;
+	struct sens_constraint *next;
+} sens_constraint_t;
+
+static sens_constraint_t *sens_constraints;
+
+typedef struct cat_constraint {
+	char op;
+	char *text;
+	int nbits;
+	ebitmap_t mask;
+	ebitmap_t cat;
+	struct cat_constraint *next;
+} cat_constraint_t;
+
+static cat_constraint_t *cat_constraints;
 
 unsigned int
 hash(const char *str) {
@@ -399,12 +420,14 @@ create_domain(const char *name) {
 void
 destroy_domain(domain_t *domain) {
 	int i;
+        unsigned int rt = 0, tr = 0;
 	for (i=0; i < N_BUCKETS; i++) {
 		context_map_node_t *ptr;
 		for (ptr = domain->trans_to_raw[i]; ptr;)  {
 			context_map_node_t *t = ptr->next;
 			free(ptr);
 			ptr = t;
+			tr++;
 		}
 		domain->trans_to_raw[i] = NULL;
 	}
@@ -417,6 +440,7 @@ destroy_domain(domain_t *domain) {
 			free(ptr->map);
 			free(ptr);
 			ptr = t;
+			rt++;
 		}
 		domain->raw_to_trans[i] = NULL;
 	}
@@ -433,6 +457,8 @@ destroy_domain(domain_t *domain) {
 		destroy_group(&domain->groups, domain->groups);
 	free(domain->name);
 	free(domain);
+
+	syslog(LOG_INFO, "cache sizes: tr = %u, rt = %u", tr, rt);
 }
 
 int
@@ -456,6 +482,138 @@ add_word(word_group_t *group, char *raw, char *trans) {
 	ebitmap_destroy(&temp);
 
 	return 0;
+}
+
+int
+add_constraint(char op, char *raw, char *tok) {
+	log_debug("%s\n", "add_constraint");
+	ebitmap_t empty;
+	ebitmap_init(&empty);
+	if (!raw || !*raw) {
+		syslog(LOG_ERR, "unable to parse line");
+		return -1;
+	}
+	if (*raw == 's') {
+		sens_constraint_t *constraint = calloc(1, sizeof(sens_constraint_t));
+		if (sscanf(raw,"s%u", &constraint->sens) != 1) {
+			syslog(LOG_ERR, "unable to parse level");
+			free(constraint);
+			return -1;
+		}
+		if (parse_ebitmap(&constraint->cat, &empty, tok) < 0) {
+			syslog(LOG_ERR, "unable to parse cat");
+			free(constraint);
+			return -1;
+		}
+		if (asprintf(&constraint->text, "%s%c%s", raw, op, tok) < 0) {
+			log_error("asprintf failed %s", strerror(errno));
+			exit(1);
+		}
+		constraint->op = op;
+		sens_constraint_t **p;
+		for (p= &sens_constraints; *p; p = &(*p)->next)
+                        ;
+                *p = constraint;
+		return 0;
+	} else if (*raw == 'c' ) {
+		cat_constraint_t *constraint = calloc(1, sizeof(cat_constraint_t));
+		if (parse_ebitmap(&constraint->mask, &empty, raw) < 0) {
+			syslog(LOG_ERR, "unable to parse mask");
+			free(constraint);
+			return -1;
+		}
+		if (parse_ebitmap(&constraint->cat, &empty, tok) < 0) {
+			syslog(LOG_ERR, "unable to parse cat");
+			ebitmap_destroy(&constraint->mask);
+			free(constraint);
+			return -1;
+		}
+		if (asprintf(&constraint->text, "%s%c%s", raw, op, tok) < 0) {
+			log_error("asprintf failed %s", strerror(errno));
+			exit(1);
+		}
+		constraint->nbits = ebitmap_cardinality(&constraint->cat);
+		constraint->op = op;
+		cat_constraint_t **p;
+		for (p= &cat_constraints; *p; p = &(*p)->next)
+                        ;
+                *p = constraint;
+		return 0;
+	} else {
+		return -1;
+	}
+	
+	return 0;
+}
+
+int
+violates_constraints(mls_level_t *l) {
+	int nbits;
+	sens_constraint_t *s;
+	for (s=sens_constraints; s; s=s->next) {
+		if (s->sens == l->sens) {
+			ebitmap_t common;
+			ebitmap_and(&common, &s->cat, &l->cat);
+			nbits = ebitmap_cardinality(&common);
+			ebitmap_destroy(&common);
+			if (nbits) {
+				char *text = mls_level_to_string(l);
+				syslog(LOG_WARNING, "%s violates %s", text, s->text);
+				free(text);
+				return 1;
+			}
+		}
+	}
+	cat_constraint_t *c;
+	for (c=cat_constraints; c; c=c->next) {
+		ebitmap_t common;
+		ebitmap_and(&common, &c->mask, &l->cat);
+		nbits = ebitmap_cardinality(&common);
+		ebitmap_destroy(&common);
+		if (nbits > 0) {
+			ebitmap_t common;
+			ebitmap_and(&common, &c->cat, &l->cat);
+			nbits = ebitmap_cardinality(&common);
+			ebitmap_destroy(&common);
+			if ((c->op == '!' && nbits) ||
+			    (c->op == '>' && nbits != c->nbits)) {
+				char *text = mls_level_to_string(l);
+				syslog(LOG_WARNING, "%s violates %s (%d,%d)", text, c->text, nbits, c->nbits);
+				free(text);
+				return 1;
+			}
+		}
+	}
+	return 0;
+}
+
+void
+destroy_sens_constraint(sens_constraint_t **list, sens_constraint_t *constraint) {
+	for (; list && *list; list = &(*list)->next) {
+		if (*list == constraint) {
+			*list = constraint->next;
+			break;
+		}
+	}
+	ebitmap_destroy(&constraint->cat);
+	free(constraint->text);
+	memset(constraint, 0, sizeof(sens_constraint_t));
+	free(constraint);
+}
+
+void
+destroy_cat_constraint(cat_constraint_t **list, cat_constraint_t *constraint) {
+	for (; list && *list; list = &(*list)->next) {
+		if (*list == constraint) {
+			*list = constraint->next;
+			break;
+		}
+	}
+	ebitmap_destroy(&constraint->mask);
+	ebitmap_destroy(&constraint->cat);
+	free(constraint->text);
+	memset(constraint, 0, sizeof(cat_constraint_t));
+	free(constraint);
 }
 
 mls_level_t *
@@ -591,26 +749,50 @@ process_trans(char *buffer) {
 	static word_group_t *group;
 	static int base_classification;
 	static int lineno = 0;
-	char *raw;
-	char *ptr, *tok;
+	char op='\0';
 
 	lineno++;
-	trim(buffer, "\r\n");          /* zap trailing CR, LF */
-	buffer = triml(buffer, "\t "); /* zap leading whitespace */
-	log_debug("%d: %s\n", lineno, buffer);
-	if(*buffer == '#') return 0;
-	if(*buffer == 0) return 0;
+	log_debug("%d: %s", lineno, buffer);
 
-	raw = strtok_r(buffer, "=", &ptr);
-	if (!raw || !*raw) {
+	/* zap leading whitespace */
+	buffer = triml(buffer, "\t ");
+
+	/* Ignore comments */
+	if (*buffer == '#') return 0;
+	char *comment = strpbrk (buffer, "#");
+	if (comment) {
+		*comment = '\0';
+	}
+
+	/* zap trailing whitespace */
+	buffer = trim(buffer, "\t \r\n");
+
+	if (*buffer == 0) return 0;
+
+	char *delim = strpbrk (buffer, "=!>");
+	if (! delim) {
+		syslog(LOG_ERR, "invalid line (no !, = or >) %d", lineno);
+		return -1;
+	}
+
+	op = *delim;
+	*delim = '\0';
+	char *raw = buffer;
+	char *tok = delim+1;
+
+	if (! *raw) {
 		syslog(LOG_ERR, "invalid line %d", lineno);
 		return -1;
 	}
 
-	tok = strtok_r(NULL, "\0", &ptr);
-	if (!tok) {
+	if (! *tok) {
 		syslog(LOG_ERR, "invalid line %d", lineno);
 		return -1;
+	}
+
+	/* constraints have different syntax */
+	if (op == '!' || op == '>') {
+		return add_constraint(op, raw, tok);
 	}
 
 	if (!strcmp(raw, "Domain") || !strcmp(raw, "Table")) {
@@ -776,7 +958,12 @@ emit_whitespace(char*buffer, char *whitespace) {
 }
 
 static int
-size_alpha(const void *p1, const void *p2) {
+string_size(const void *p1, const void *p2) {
+	return strlen(*(char **)p2) - strlen(*(char **)p1);
+}
+
+static int
+word_size(const void *p1, const void *p2) {
 	word_t *w1 = *(word_t **)p1;
 	word_t *w2 = *(word_t **)p2;
 	int w1_len=strlen(w1->text);
@@ -803,16 +990,32 @@ void
 build_regexps(domain_t *domain) {
 	char buffer[1024 * 128];
 	buffer[0] = '\0';
-	base_classification_t *i;
+	base_classification_t *bc;
 	word_group_t *g;
 	affix_t *a;
 	word_t *w;
+	size_t n_el, i;
 
 /* whitespace collapse ??? XXX */
-	for (i = domain->base_classifications; i; i = i->next) {
-		strcat(buffer, i->trans);
-		if (i->next) strcat(buffer,"|");
+	for (n_el = 0, bc = domain->base_classifications; bc; bc = bc->next) {
+		n_el++;
 	}
+
+	char **sortable = calloc(n_el, sizeof(char *));
+
+	for (i=0, bc = domain->base_classifications; bc; bc = bc->next) {
+		sortable[i++] = bc->trans;
+	}
+
+	qsort(sortable, n_el, sizeof(char *), string_size);
+
+	for (i = 0; i < n_el; i++) {
+		strcat(buffer, sortable[i]);
+		if (i < n_el) strcat(buffer,"|");
+	}
+
+	free(sortable);
+
 	log_debug(">>> %s classification regexp=%s\n", domain->name, buffer);
 	build_regexp(&domain->base_classification_regexp, buffer);
 
@@ -832,19 +1035,25 @@ build_regexps(domain_t *domain) {
 		if (g->prefixes)
 			strcat(buffer, "^");
 		strcat(buffer, "(?:");
+
 		g->sword_len=0;
-		for (w = g->words; w; w = w->next) {
-			strcat(buffer,"\\b");
-			strcat(buffer, w->text);
-			strcat(buffer,"\\b");
-			if (w->next) strcat(buffer,"|");
+		for (w = g->words; w; w = w->next)
 			g->sword_len++;
-		}
+
 		g->sword = calloc(g->sword_len, sizeof(word_t *));
+
 		int i=0;
 		for (w = g->words; w; w = w->next)
 			g->sword[i++]=w;
-		qsort(g->sword, g->sword_len, sizeof(word_t *), size_alpha);
+
+		qsort(g->sword, g->sword_len, sizeof(word_t *), word_size);
+
+		for (i=0; i < g->sword_len; i++) {
+			if (i) strcat(buffer,"|");
+			strcat(buffer,"\\b");
+			strcat(buffer, g->sword[i]->text);
+			strcat(buffer,"\\b");
+		}
 
 		strcat(buffer,"|");
 		emit_whitespace(buffer, g->whitespace);
@@ -874,8 +1083,11 @@ build_regexps(domain_t *domain) {
 /* TODO - if bit is set & cleared in one pass - error */
 char *
 compute_raw_from_trans(const char *level, domain_t *domain) {
+
+#ifdef DEBUG
 	struct timeval startTime;
 	gettimeofday(&startTime, 0);
+#endif
 
 	int ovector[OVECCOUNT];
 	word_group_t *g;
@@ -888,13 +1100,16 @@ compute_raw_from_trans(const char *level, domain_t *domain) {
 		build_regexps(domain);
 	if (!domain->base_classification_regexp)
 		return NULL;
+	log_debug(" compute_raw_from_trans work = %s\n", work);
 	int rc = pcre_exec(domain->base_classification_regexp, 0, work, strlen (work), 0, PCRE_ANCHORED, ovector, OVECCOUNT);
 	if (rc > 0) {
 		const char *match = NULL;
 		pcre_get_substring(work, ovector, rc, 0, &match);
+		log_debug(" compute_raw_from_trans match = %s len = %ld\n", match, strlen(match));
 		base_classification_t *bc;
 		for (bc = domain->base_classifications; bc; bc = bc->next) {
 			if (!strcmp(bc->trans, match)) {
+				log_debug(" compute_raw_from_trans base classification %s matched %s\n", level, bc->trans);
 				mraw = malloc(sizeof(mls_level_t));
 				mls_level_cpy(mraw, bc->level);
 				break;
@@ -906,6 +1121,8 @@ compute_raw_from_trans(const char *level, domain_t *domain) {
 		while (*p && (strchr(" 	", *p) != NULL))
 			*p++ = '#';
 		pcre_free((char *)match);
+	} else {
+		log_debug(" compute_raw_from_trans no base classification matched %s\n", level);
 	}
 
 	if (mraw == NULL) {
@@ -945,8 +1162,7 @@ compute_raw_from_trans(const char *level, domain_t *domain) {
 			     g->word_regexp) {
 				char *s = work + prefix_offset + prefix_len;
 				int l = (suffix_len ? suffix_offset : work_len) - prefix_len - prefix_offset;
-				int rc = pcre_exec(g->word_regexp, 0, s, l, 0,
-						0, ovector, OVECCOUNT);
+				int rc = pcre_exec(g->word_regexp, 0, s, l, 0, 0, ovector, OVECCOUNT);
 				if (rc > 0) {
 					const char *match;
 					pcre_get_substring(s, ovector, rc, 0, &match);
@@ -994,6 +1210,7 @@ compute_raw_from_trans(const char *level, domain_t *domain) {
 					pcre_free((void *)match);
 				}
 			}
+/* YYY */
 			complete=1;
 			char *p = work;
 			while(*p) {
@@ -1005,10 +1222,15 @@ compute_raw_from_trans(const char *level, domain_t *domain) {
 		}
 	}
 	free(work);
+	if (violates_constraints(mraw)) {
+		complete = 0;
+	}
 	if (complete)
 		r = mls_level_to_string(mraw);
 	mls_level_destroy(mraw);
 	free(mraw);
+
+#ifdef DEBUG
 	struct timeval stopTime;
 	gettimeofday(&stopTime, 0);
 	long int ms;
@@ -1016,6 +1238,8 @@ compute_raw_from_trans(const char *level, domain_t *domain) {
 		ms = (stopTime.tv_sec - startTime.tv_sec - 1) * 1000 + (stopTime.tv_usec/1000 + 1000 - startTime.tv_usec/1000);
 	else
 		ms = (stopTime.tv_sec - startTime.tv_sec    ) * 1000 + (stopTime.tv_usec/1000        - startTime.tv_usec/1000);
+	log_debug(" compute_raw_from_trans in %ld ms'\n", ms);
+#endif
 
 	return r;
 }
@@ -1023,8 +1247,11 @@ compute_raw_from_trans(const char *level, domain_t *domain) {
 /* XXX SLOW */
 char *
 compute_trans_from_raw(const char *level, domain_t *domain) {
+
+#ifdef DEBUG
 	struct timeval startTime;
 	gettimeofday(&startTime, 0);
+#endif
 
 	char *rval = NULL;
 	if (!level)
@@ -1033,6 +1260,15 @@ compute_trans_from_raw(const char *level, domain_t *domain) {
 	if (!l)
 		return NULL;
 	log_debug(" compute_trans_from_raw raw = %s\n", level);
+
+/* YYY */
+	/* check constraints */
+	if (violates_constraints(l)) {
+		syslog(LOG_ERR, "%s violates constraints", level);
+		mls_level_destroy(l);
+		free(l);
+		return NULL;
+	}
 
 /* HACK XXX  -  should be function, should derive from config*/
 	int doInverse = l->sens > 0;
@@ -1180,6 +1416,7 @@ compute_trans_from_raw(const char *level, domain_t *domain) {
 		free(l);
 	}
 
+#ifdef DEBUG
 	struct timeval stopTime;
 	gettimeofday(&stopTime, 0);
 	long int ms;
@@ -1187,6 +1424,9 @@ compute_trans_from_raw(const char *level, domain_t *domain) {
 		ms = (stopTime.tv_sec - startTime.tv_sec - 1) * 1000 + (stopTime.tv_usec/1000 + 1000 - startTime.tv_usec/1000);
 	else
 		ms = (stopTime.tv_sec - startTime.tv_sec    ) * 1000 + (stopTime.tv_usec/1000        - startTime.tv_usec/1000);
+
+	log_debug(" compute_trans_from_raw in %ld ms'\n", ms);
+#endif
 
 	return rval;
 }
@@ -1196,8 +1436,10 @@ trans_context(const security_context_t incon, security_context_t *rcon) {
 	char *trans = NULL;
 	*rcon = NULL;
 
+#ifdef DEBUG
 	struct timeval startTime;
 	gettimeofday(&startTime, 0);
+#endif
 
 	log_debug(" trans_context input = %s\n", incon);
 	char *range = extract_range(incon);
@@ -1279,6 +1521,7 @@ trans_context(const security_context_t incon, security_context_t *rcon) {
 	}
 	free(range);
 
+#ifdef DEBUG
 	struct timeval stopTime;
 	gettimeofday(&stopTime, 0);
 	long int ms;
@@ -1288,6 +1531,7 @@ trans_context(const security_context_t incon, security_context_t *rcon) {
 		ms = (stopTime.tv_sec - startTime.tv_sec    ) * 1000 + (stopTime.tv_usec/1000        - startTime.tv_usec/1000);
 
 	log_debug(" trans_context input='%s' output='%s in %ld ms'\n", incon, *rcon, ms);
+#endif
 	return 0;
 }
 
@@ -1296,8 +1540,10 @@ untrans_context(const security_context_t incon, security_context_t *rcon) {
 	char *raw = NULL;
 	*rcon = NULL;
 
+#ifdef DEBUG
 	struct timeval startTime;
 	gettimeofday(&startTime, 0);
+#endif
 
 	log_debug(" untrans_context incon = %s\n", incon);
 	char *range = extract_range(incon);
@@ -1323,12 +1569,14 @@ untrans_context(const security_context_t incon, security_context_t *rcon) {
 				char *canonical = find_in_hashtable(raw, domain, domain->raw_to_trans);
 				if (!canonical) {
 					canonical = compute_trans_from_raw(raw, domain);
-					if (canonical)
+					if (canonical && strcmp(canonical, range))
 						add_cache(domain, raw, canonical);
 				}
 				if (canonical)
 					free(canonical);
 				add_cache(domain, raw, range);
+			} else {
+				log_debug("untrans_context unable to compute raw context %s\n", range);
 			}
 		}
 
@@ -1406,6 +1654,7 @@ untrans_context(const security_context_t incon, security_context_t *rcon) {
 	}
 	free(range);
 
+#ifdef DEBUG
 	struct timeval stopTime;
 	gettimeofday(&stopTime, 0);
 	long int ms;
@@ -1415,6 +1664,7 @@ untrans_context(const security_context_t incon, security_context_t *rcon) {
 		ms = (stopTime.tv_sec - startTime.tv_sec    ) * 1000 + (stopTime.tv_usec/1000        - startTime.tv_usec/1000);
 
 	log_debug(" untrans_context input='%s' output='%s' n %ld ms\n", incon, *rcon, ms);
+#endif
 	return 0;
 }
 
@@ -1424,6 +1674,16 @@ finish_context_translations(void) {
 		domain_t *next = domains->next;
 		destroy_domain(domains);
 		domains = next;
+	}
+	while(sens_constraints) {
+		sens_constraint_t *next = sens_constraints->next;
+		destroy_sens_constraint(&sens_constraints, sens_constraints);
+		sens_constraints = next;
+	}
+	while(cat_constraints) {
+		cat_constraint_t *next = cat_constraints->next;
+		destroy_cat_constraint(&cat_constraints, cat_constraints);
+		cat_constraints = next;
 	}
 }
 
