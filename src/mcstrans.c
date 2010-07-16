@@ -868,7 +868,6 @@ process_trans(char *buffer) {
 		}
 		add_cache(domain, raw, tok);
 	}
-/* XXX what errors are meaningful */
 	return 0;
 }
 
@@ -949,7 +948,6 @@ find_in_hashtable(const char *range, domain_t *domain, context_map_node_t **tabl
 	return trans;
 }
 
-/* need to escape regexp characters ??? XXX */
 void
 emit_whitespace(char*buffer, char *whitespace) {
 	strcat(buffer, "[");
@@ -996,7 +994,6 @@ build_regexps(domain_t *domain) {
 	word_t *w;
 	size_t n_el, i;
 
-/* whitespace collapse ??? XXX */
 	for (n_el = 0, bc = domain->base_classifications; bc; bc = bc->next) {
 		n_el++;
 	}
@@ -1079,8 +1076,6 @@ build_regexps(domain_t *domain) {
 	}
 }
 
-/* XXX */
-/* TODO - if bit is set & cleared in one pass - error */
 char *
 compute_raw_from_trans(const char *level, domain_t *domain) {
 
@@ -1244,7 +1239,6 @@ compute_raw_from_trans(const char *level, domain_t *domain) {
 	return r;
 }
 
-/* XXX SLOW */
 char *
 compute_trans_from_raw(const char *level, domain_t *domain) {
 
@@ -1270,7 +1264,6 @@ compute_trans_from_raw(const char *level, domain_t *domain) {
 		return NULL;
 	}
 
-/* HACK XXX  -  should be function, should derive from config*/
 	int doInverse = l->sens > 0;
 
 	word_group_t *groups = NULL;
